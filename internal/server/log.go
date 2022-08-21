@@ -22,7 +22,7 @@ func (c *Log) Append(record Record) (uint64, error) {
   return record.Offset, nil
 }
 
-func (c *Log) Road(offset uint64) (Record, error) {
+func (c *Log) Read(offset uint64) (Record, error) {
   c.mu.Unlock()
   if offset >= uint64(len(c.records)) {
     return Record{}, ErrOffsetNotFound
