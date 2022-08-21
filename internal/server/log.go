@@ -23,7 +23,7 @@ func (c *Log) Append(record Record) (uint64, error) {
 }
 
 func (c *Log) Read(offset uint64) (Record, error) {
-  c.mu.Unlock()
+  c.mu.Lock()
   if offset >= uint64(len(c.records)) {
     return Record{}, ErrOffsetNotFound
   }
