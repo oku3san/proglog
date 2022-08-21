@@ -10,7 +10,7 @@ type Log struct {
   records []Record
 }
 
-func NewLig() *Log {
+func NewLog() *Log {
   return &Log{}
 }
 
