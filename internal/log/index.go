@@ -86,3 +86,7 @@ func (i *index) Write(off uint32, pos uint64) error {
 func (i *index) isMaxed() bool {
   return uint64(len(i.mmap)) < i.size+entWidth
 }
+
+func (i *index) Name() string {
+  return i.file.Name()
+}
