@@ -116,3 +116,9 @@ func (l *Log) Close() error {
   }
   return nil
 }
+
+func (l *Log) LowestOffset() (uint64, error) {
+  l.mu.RLock()
+  defer l.mu.RUnlock()
+  return l.segments[0].baseOffset, nil
+}
