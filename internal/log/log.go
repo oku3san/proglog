@@ -128,3 +128,20 @@ func (l *Log) HighestOffset() (uint64, error) {
   defer l.mu.RUnlock()
   return l.HighestOffset()
 }
+
+func (l *Log) Truncate(lowest uint64) error {
+  l.mu.Lock()
+  defer l.mu.Unlock()
+  var segments []*segment
+  for _, s := range l.segments {
+    if s.nextOffset <= lowest+1 {
+      if err := s.Remove(); err != nil {
+        return err
+      }
+      continue
+    }
+    segments = append(segments, s)
+  }
+  l.segments = segments
+  return nil
+}
