@@ -3,6 +3,7 @@ package log
 import (
   "fmt"
   api "github.com/oku3san/proglog/api/v1"
+  "io"
   "os"
   "path"
   "sort"
@@ -144,4 +145,25 @@ func (l *Log) Truncate(lowest uint64) error {
   }
   l.segments = segments
   return nil
+}
+
+func (l *Log) Reader() io.Reader {
+  l.mu.RLock()
+  defer l.mu.RUnlock()
+  readers := make([]io.Reader, len(l.segments))
+  for i, segment := range l.segments {
+    readers[i] = &originReader{segment.store, 0}
+  }
+  return io.MultiReader(readers...)
+}
+
+type originReader struct {
+  *store
+  off int64
+}
+
+func (o *originReader) Read(p []byte) (int, error) {
+  n, err := o.ReadAt(p, o.off)
+  o.off += int64(n)
+  return n, err
 }
