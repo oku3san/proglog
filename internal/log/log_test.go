@@ -52,3 +52,31 @@ func testOutOfRangeErr(t *testing.T, log *Log) {
   require.Error(t, err)
   require.NoError(t, log.Close())
 }
+
+func testInitExisting(t *testing.T, o *Log) {
+  append := &api.Record{
+    Value: []byte("hellp world"),
+  }
+  for i := 0; i < 3; i++ {
+    _, err := o.Append(append)
+    require.NoError(t, o.Close())
+
+    off, err := o.LowestOffset()
+    require.NoError(t, err)
+    require.Equal(t, uint64(0), off)
+    off, err = o.HighestOffset()
+    require.NoError(t, err)
+    require.Equal(t, uint64(2), off)
+
+    n, err := NewLog(o.Dir, o.Config)
+    require.NoError(t, err)
+
+    off, err = n.LowestOffset()
+    require.NoError(t, err)
+    require.Equal(t, uint64(0), off)
+    off, err = n.HighestOffset()
+    require.NoError(t, err)
+    require.Equal(t, uint64(2), off)
+    require.NoError(t, n.Close())
+  }
+}
