@@ -3,6 +3,8 @@ package log
 import (
   api "github.com/oku3san/proglog/api/v1"
   "github.com/stretchr/testify/require"
+  "google.golang.org/protobuf/proto"
+  "io"
   "os"
   "testing"
 )
@@ -79,4 +81,23 @@ func testInitExisting(t *testing.T, o *Log) {
     require.Equal(t, uint64(2), off)
     require.NoError(t, n.Close())
   }
+}
+
+func testReader(t *testing.T, log *Log) {
+  append := &api.Record{
+    Value: []byte("hello world"),
+  }
+  off, err := log.Append(append)
+  require.NoError(t, err)
+  require.Equal(t, uint64(0), off)
+
+  reader := log.Reader()
+  b, err := io.ReadAll(reader)
+  require.NoError(t, err)
+
+  read := &api.Record{}
+  err = proto.Unmarshal(b[lenWidth:], read)
+  require.NoError(t, err)
+  require.Equal(t, append.Value, read.Value)
+  require.NoError(t, log.Close())
 }
