@@ -63,21 +63,21 @@ func (l *Log) setup() error {
     ); err != nil {
       return err
     }
-    return nil
   }
+  return nil
 }
 
 func (l *Log) Append(record *api.Record) (uint64, error) {
   l.mu.Lock()
   defer l.mu.Unlock()
 
-  highestOffset, err := l.highestOffset()
+  highestOffset, err := l.HighestOffset()
   if err != nil {
     return 0, err
   }
 
   if l.activeSegment.IsMaxed() {
-    err = l.newSegnemt(highestOffset + 1)
+    err = l.newSegment(highestOffset + 1)
     if err != nil {
       return 0, err
     }
