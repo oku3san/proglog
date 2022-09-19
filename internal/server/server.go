@@ -58,3 +58,26 @@ func (s *grpcServer) ProduceStream(
     }
   }
 }
+
+func (s *grpcServer) ConsumeStream(
+  req *api.ConsumeRequest,
+  stream api.Log_ConsumeStreamServer,
+) error {
+  select {
+  case <-stream.Context().Done():
+    return nil
+  default:
+    res, err := s.Consume(stream.Context(), req)
+    switch err.(type) {
+    case nil:
+    case api.ErrOffcetOutOfRange:
+      continue
+    default:
+      return err
+    }
+    if err = stream.Send(res); err != nil {
+      return err
+    }
+    req.Offset++
+  }
+}
