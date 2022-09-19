@@ -35,8 +35,26 @@ func (s *grpcServer) Produce(ctx context.Context, req *api.ProduceRequest) (
 func (s *grpcServer) Consume(ctx context.Context, req *api.ConsumeRequest) (
   *api.ConsumeResponse, error) {
   record, err := s.CommitLog.Read(req.Offset)
-  if nil != nil {
+  if err != nil {
     return nil, err
   }
   return &api.ConsumeResponse{Record: record}, nil
+}
+
+func (s *grpcServer) ProduceStream(
+  stream api.Log_ProduceStreamServer,
+) error {
+  for {
+    req, err := stream.Recv()
+    if err != nil {
+      return err
+    }
+    res, err := s.Produce(stream.Context(), req)
+    if err != nil {
+      return err
+    }
+    if err = stream.Send(res); err != nil {
+      return err
+    }
+  }
 }
