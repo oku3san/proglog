@@ -16,6 +16,11 @@ type grpcServer struct {
   *Config
 }
 
+type CommitLog interface {
+  Append(record *api.Record) (uint64, error)
+  Read(uint64) (*api.Record, error)
+}
+
 func newgrpcServer(config *Config) (sev *grpcServer, err error) {
   sev = &grpcServer{
     Config: config,
