@@ -117,6 +117,20 @@ func (l *Log) Close() error {
   return nil
 }
 
+func (l *Log) Remove() error {
+  if err := l.Close(); err != nil {
+    return err
+  }
+  return os.RemoveAll(l.Dir)
+}
+
+func (l *Log) Reset() error {
+  if err := l.Remove(); err != nil {
+    return err
+  }
+  return l.setup()
+}
+
 func (l *Log) LowestOffset() (uint64, error) {
   l.mu.RLock()
   defer l.mu.RUnlock()
