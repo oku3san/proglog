@@ -7,8 +7,15 @@ import (
 )
 
 type Config struct {
-  CommitLog CommitLog
+  CommitLog  CommitLog
+  Authorizer Authorizer
 }
+
+const (
+  objectWildcard = "*"
+  produceAction  = "produce"
+  consumeAction  = "consume"
+)
 
 var _ api.LogServer = (*grpcServer)(nil)
 
@@ -18,15 +25,19 @@ type grpcServer struct {
 }
 
 type CommitLog interface {
-  Append(record *api.Record) (uint64, error)
+  Append(*api.Record) (uint64, error)
   Read(uint64) (*api.Record, error)
 }
 
-func newgrpcServer(config *Config) (sev *grpcServer, err error) {
-  sev = &grpcServer{
+type Authorizer interface {
+  Authorize(subject, object, action string) error
+}
+
+func newgrpcServer(config *Config) (srv *grpcServer, err error) {
+  srv = &grpcServer{
     Config: config,
   }
-  return sev, nil
+  return srv, nil
 }
 
 func (s *grpcServer) Produce(ctx context.Context, req *api.ProduceRequest) (
@@ -90,8 +101,11 @@ func (s *grpcServer) ConsumeStream(
   }
 }
 
-func NewGRPCServer(config *Config) (*grpc.Server, error) {
-  gsrv := grpc.NewServer()
+func NewGRPCServer(config *Config, grpcOpts ...grpc.ServerOption) (
+  *grpc.Server,
+  error,
+) {
+  gsrv := grpc.NewServer(grpcOpts...)
   srv, err := newgrpcServer(config)
   if err != nil {
     return nil, err

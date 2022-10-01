@@ -12,9 +12,11 @@ import (
 )
 
 type Log struct {
-  mu            sync.RWMutex
-  Dir           string
-  Config        Config
+  mu sync.RWMutex
+
+  Dir    string
+  Config Config
+
   activeSegment *segment
   segments      []*segment
 }
@@ -24,12 +26,13 @@ func NewLog(dir string, c Config) (*Log, error) {
     c.Segment.MaxStoreBytes = 1024
   }
   if c.Segment.MaxIndexBytes == 0 {
-    c.Segment.MaxIndexBytes = 2014
+    c.Segment.MaxIndexBytes = 1024
   }
   l := &Log{
     Dir:    dir,
     Config: c,
   }
+
   return l, l.setup()
 }
 
@@ -54,6 +57,8 @@ func (l *Log) setup() error {
     if err = l.newSegment(baseOffsets[i]); err != nil {
       return err
     }
+    // baseOffset contains dup for index and store so we skip
+    // the dup
     i++
   }
   if l.segments == nil {
@@ -70,7 +75,7 @@ func (l *Log) Append(record *api.Record) (uint64, error) {
   l.mu.Lock()
   defer l.mu.Unlock()
 
-  highestOffset, err := l.HighestOffset()
+  highestOffset, err := l.highestOffset()
   if err != nil {
     return 0, err
   }
@@ -100,9 +105,11 @@ func (l *Log) Read(off uint64) (*api.Record, error) {
       break
     }
   }
-  if s == nil || s.nextOffset <= off {
+
+  if s == nil {
     return nil, api.ErrOffsetOutOfRange{Offset: off}
   }
+
   return s.Read(off)
 }
 
@@ -140,7 +147,16 @@ func (l *Log) LowestOffset() (uint64, error) {
 func (l *Log) HighestOffset() (uint64, error) {
   l.mu.RLock()
   defer l.mu.RUnlock()
-  return l.HighestOffset()
+
+  return l.highestOffset()
+}
+
+func (l *Log) highestOffset() (uint64, error) {
+  off := l.segments[len(l.segments)-1].nextOffset
+  if off == 0 {
+    return 0, nil
+  }
+  return off - 1, nil
 }
 
 func (l *Log) Truncate(lowest uint64) error {
