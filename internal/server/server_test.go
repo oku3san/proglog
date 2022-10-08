@@ -7,6 +7,7 @@ import (
   "github.com/oku3san/proglog/internal/log"
   "github.com/stretchr/testify/require"
   "google.golang.org/grpc"
+  "google.golang.org/grpc/codes"
   "google.golang.org/grpc/credentials"
   "google.golang.org/grpc/status"
   "net"
@@ -24,6 +25,7 @@ func TestServer(t *testing.T) {
     "produce.consume a message to/from the log succeeds": testProduceConsume,
     "produce/consume stream succeeds":                    testProduceConsumeStream,
     "consume past log boundary fails":                    testConsumePastBoundary,
+    "unauthorized fails":                                 testUnauthorized,
   } {
     t.Run(scenario, func(t *testing.T) {
       rootClient,
@@ -37,7 +39,8 @@ func TestServer(t *testing.T) {
 }
 
 func setupTest(t *testing.T, fn func(config *Config)) (
-  client api.LogClient,
+  rootClient api.LogClient,
+  nobodyClient api.LogClient,
   cfg *Config,
   teardown func(),
 ) {
@@ -77,12 +80,6 @@ func setupTest(t *testing.T, fn func(config *Config)) (
     config.NobodyClientCertFile,
     config.NobodyClientKeyFile,
   )
-  return rootClient, nobodyClient, cfg, func() {
-    rootConn.Close()
-    nobodyConn.Close()
-    server.Stop()
-    l.Close()
-  }
 
   serverTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
     CertFile:      config.ServerCertFile,
@@ -114,14 +111,15 @@ func setupTest(t *testing.T, fn func(config *Config)) (
     server.Serve(l)
   }()
 
-  return client, cfg, func() {
-    cc.Close()
+  return rootClient, nobodyClient, cfg, func() {
+    rootConn.Close()
+    nobodyConn.Close()
     server.Stop()
     l.Close()
   }
 }
 
-func testProduceConsume(t *testing.T, client api.LogClient, config *Config) {
+func testProduceConsume(t *testing.T, client, _ api.LogClient, config *Config) {
   ctx := context.Background()
 
   want := &api.Record{
@@ -147,19 +145,19 @@ func testProduceConsume(t *testing.T, client api.LogClient, config *Config) {
 
 func testConsumePastBoundary(
   t *testing.T,
-  cliet api.LogClient,
+  client, _ api.LogClient,
   config *Config,
 ) {
   ctx := context.Background()
 
-  produce, err := cliet.Produce(ctx, &api.ProduceRequest{
+  produce, err := client.Produce(ctx, &api.ProduceRequest{
     Record: &api.Record{
       Value: []byte("hello world"),
     },
   })
   require.NoError(t, err)
 
-  consume, err := cliet.Consume(ctx, &api.ConsumeRequest{
+  consume, err := client.Consume(ctx, &api.ConsumeRequest{
     Offset: produce.Offset + 1,
   })
   if consume != nil {
@@ -174,7 +172,7 @@ func testConsumePastBoundary(
 
 func testProduceConsumeStream(
   t *testing.T,
-  client api.LogClient,
+  client, _ api.LogClient,
   config *Config,
 ) {
   ctx := context.Background()
@@ -222,5 +220,38 @@ func testProduceConsumeStream(
         Offset: uint64(i),
       })
     }
+  }
+}
+
+func testUnauthorized(
+  t *testing.T,
+  _,
+  client api.LogClient,
+  config *Config,
+) {
+  ctx := context.Background()
+  produce, err := client.Produce(ctx,
+    &api.ProduceRequest{
+      Record: &api.Record{
+        Value: []byte("hello world"),
+      },
+    },
+  )
+  if produce != nil {
+    t.Fatalf("produce response should be nil")
+  }
+  gotCode, wantCode := status.Code(err), codes.PermissionDenied
+  if gotCode != wantCode {
+    t.Fatalf("got code: %d, want: %d", gotCode, wantCode)
+  }
+  consume, err := client.Consume(ctx, &api.ConsumeRequest{
+    Offset: 0,
+  })
+  if consume != nil {
+    t.Fatalf("consume response should be nil")
+  }
+  gotCode, wantCode = status.Code(err), codes.PermissionDenied
+  if gotCode != wantCode {
+    t.Fatalf("got code: %d, want: %d", gotCode, wantCode)
   }
 }
