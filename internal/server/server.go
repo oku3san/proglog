@@ -4,12 +4,16 @@ import (
   "context"
   grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
   grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
+  grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
   api "github.com/oku3san/proglog/api/v1"
+  "go.uber.org/zap"
+  "go.uber.org/zap/zapcore"
   "google.golang.org/grpc"
   "google.golang.org/grpc/codes"
   "google.golang.org/grpc/credentials"
   "google.golang.org/grpc/peer"
   "google.golang.org/grpc/status"
+  "time"
 )
 
 type Config struct {
@@ -125,6 +129,17 @@ func NewGRPCServer(config *Config, grpcOpts ...grpc.ServerOption) (
   *grpc.Server,
   error,
 ) {
+  logger := zap.L().Named("server")
+  zapOpts := []grpc_zap.Option{
+    grpc_zap.WithDurationField(
+      func(duration time.Duration) zapcore.Field {
+        return zap.Int64(
+          "grpc.time_ns",
+          duration.Nanoseconds()
+          )
+      },
+    ),
+  }
   grpcOpts = append(grpcOpts, grpc.StreamInterceptor(
     grpc_middleware.ChainStreamServer(
       grpc_auth.StreamServerInterceptor(authenticate),
