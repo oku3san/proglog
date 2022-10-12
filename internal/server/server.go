@@ -6,6 +6,9 @@ import (
   grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
   grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
   api "github.com/oku3san/proglog/api/v1"
+  "go.opencensus.io/plugin/ocgrpc"
+  "go.opencensus.io/stats/view"
+  "go.opencensus.io/trace"
   "go.uber.org/zap"
   "go.uber.org/zap/zapcore"
   "google.golang.org/grpc"
@@ -135,11 +138,18 @@ func NewGRPCServer(config *Config, grpcOpts ...grpc.ServerOption) (
       func(duration time.Duration) zapcore.Field {
         return zap.Int64(
           "grpc.time_ns",
-          duration.Nanoseconds()
-          )
+          duration.Nanoseconds(),
+        )
       },
     ),
   }
+
+  trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+  err := view.Register(ocgrpc.DefaultServerViews...)
+  if err != nil {
+    return nil, err
+  }
+
   grpcOpts = append(grpcOpts, grpc.StreamInterceptor(
     grpc_middleware.ChainStreamServer(
       grpc_auth.StreamServerInterceptor(authenticate),
