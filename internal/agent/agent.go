@@ -177,3 +177,5 @@ func (a *Agent) Shutdown() error {
   }
   return nil
 }
+
+go mod edit -replace github.com/hashicorp/raft-boltdb=github.com/travisjeffery/raft-boltdb@v1.0.0
