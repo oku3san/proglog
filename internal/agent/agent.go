@@ -78,7 +78,7 @@ func (a *Agent) setupLogger() error {
 
 func (a *Agent) setupLog() error {
   var err error
-  a.Log, err = log.NewLog(
+  a.log, err = log.NewLog(
     a.Config.DataDir,
     log.Config{},
   )
@@ -114,7 +114,7 @@ func (a *Agent) setupServer() error {
   }
   go func() {
     if err := a.server.Serve(ln); err != nil {
-      _ = a.shutdown()
+      _ = a.Shutdown()
     }
   }()
   return err

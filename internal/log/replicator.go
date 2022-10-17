@@ -55,7 +55,7 @@ func (r *Replicator) replicate(addr string, leave chan struct{}) {
       Offset: 0,
     },
   )
-  if er != nil {
+  if err != nil {
     r.logError(err, "failed to consume", addr)
     return
   }
