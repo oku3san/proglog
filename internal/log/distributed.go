@@ -1,7 +1,10 @@
 package log
 
 import (
+  "bytes"
   "github.com/hashicorp/raft"
+  api "github.com/oku3san/proglog/api/v1"
+  "google.golang.org/protobuf/proto"
   "os"
   "path/filepath"
   "time"
@@ -126,4 +129,48 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
   }
   return err
 
+}
+
+func (l *DistributedLog) Append(record *api.Record) (uint64, error) {
+  res, err := l.apply(
+    AppendRequestType,
+    &api.ProduceRequest{Record: record},
+  )
+  if err != nil {
+    return 0, err
+  }
+  return res.(*api.ProduceResponse).Offset, nil
+}
+
+func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
+  interface{},
+  error,
+) {
+  var buf bytes.Buffer
+  _, err := buf.Write([]byte{byte(reqType)})
+  if err != nil {
+    return nil, err
+  }
+  b, err := proto.Marshal(req)
+  if err != nil {
+    return nil, err
+  }
+  _, err = buf.Write(b)
+  if err != nil {
+    return nil, err
+  }
+  timeout := 10 * time.Second
+  future := l.raft.Apply(but.Bytes(), timeout)
+  if future.Error() != nil {
+    return nil, future.Error()
+  }
+  res := future.Response()
+  if err, ok := res.(error); ok {
+    return nil, err
+  }
+  return res, nil
+}
+
+func (l *DistributedLog) Read(offset uint64) (*api.Record, error) {
+  return l.log.Read(offset)
 }
