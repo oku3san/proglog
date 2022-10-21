@@ -5,6 +5,7 @@ import (
   "github.com/hashicorp/raft"
   api "github.com/oku3san/proglog/api/v1"
   "google.golang.org/protobuf/proto"
+  "io"
   "os"
   "path/filepath"
   "time"
@@ -160,7 +161,7 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
     return nil, err
   }
   timeout := 10 * time.Second
-  future := l.raft.Apply(but.Bytes(), timeout)
+  future := l.raft.Apply(buf.Bytes(), timeout)
   if future.Error() != nil {
     return nil, future.Error()
   }
@@ -174,3 +175,58 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
 func (l *DistributedLog) Read(offset uint64) (*api.Record, error) {
   return l.log.Read(offset)
 }
+
+var _ raft.FSM = (*fsm)(nil)
+
+type fsm struct {
+  log *Log
+}
+
+type RequestType uint8
+
+const (
+  AppendRequestType RequestType = 0
+)
+
+func (l *fsm) Apply(record *raft.Log) interface{} {
+  buf := record.Data
+  reqType := RequestType(buf[0])
+  switch reqType {
+  case AppendRequestType:
+    return l.applyAppend(buf[1:])
+  }
+  return nil
+}
+
+func (l *fsm) applyAppend(b []byte) interface{} {
+  var req api.ProduceRequest
+  err := proto.Unmarshal(b, &req)
+  if err != nil {
+    return err
+  }
+  offset, err := l.log.Append(req.Record)
+  if err != nil {
+    return err
+  }
+  return &api.ProduceResponse{Offset: offset}
+}
+
+func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
+  r := f.log.Reader()
+  return &snapshot{reader: r}, nil
+}
+
+var _ raft.FSMSnapshot = (*snapshot)(nil)
+
+type snapshot struct {
+  reader io.Reader
+}
+
+func (s *snapshot) Persist(sink raft.SnapshotSink) error {
+  if _, err := io.Copy(sink, s.reader); err != nil {
+    _ = sink.Cancel()
+    return err
+  }
+  return sink.Close()
+}
+func (s *snapshot) Release() {}
