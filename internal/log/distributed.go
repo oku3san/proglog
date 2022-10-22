@@ -262,3 +262,17 @@ func (f *fsm) Restore(r io.ReadCloser) error {
   }
   return nil
 }
+
+var _ raft.LogStore = (*logStore)(nil)
+
+type logStore struct {
+  *Log
+}
+
+func newLogStore(dir string, c Config) (*logStore, error) {
+  log, err := NewLog(dir, c)
+  if err != nil {
+    return nil, err
+  }
+  return &logStore{log}, nil
+}
