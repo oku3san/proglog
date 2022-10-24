@@ -5,6 +5,7 @@ import (
   "crypto/tls"
   "fmt"
   "github.com/hashicorp/raft"
+  "github.com/hashicorp/raft-boltdb"
   api "github.com/oku3san/proglog/api/v1"
   "google.golang.org/protobuf/proto"
   "io"
@@ -15,10 +16,10 @@ import (
 )
 
 type DistributedLog struct {
-  config Config,
-  log *Log,
-  raftLog *logStore,
-  raft *raft.Raft
+  config  Config
+  log     *Log
+  raftLog *logStore
+  raft    *raft.Raft
 }
 
 func NewDistributedLog(dataDir string, config Config) (
@@ -74,7 +75,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
   snapshotStore, err := raft.NewFileSnapshotStore(
     filepath.Join(dataDir, "raft"),
     retain,
-    os.Stderr
+    os.Stderr,
   )
   if err != nil {
     return err
@@ -90,11 +91,11 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
   )
   config := raft.DefaultConfig()
   config.LocalID = l.config.Raft.LocalID
-  if l.config.Raft.HeatbeatTimeout != 0 {
-    config.HearbeatTimeout = l.config.Raft.HearbeatTimeout
+  if l.config.Raft.HeartbeatTimeout != 0 {
+    config.HeartbeatTimeout = l.config.Raft.HeartbeatTimeout
   }
   if l.config.Raft.ElectionTimeout != 0 {
-    config.ElectionTimeout = l.config.Raft.ElectioonTimeout
+    config.ElectionTimeout = l.config.Raft.ElectionTimeout
   }
   if l.config.Raft.LeaderLeaseTimeout != 0 {
     config.LeaderLeaseTimeout = l.config.Raft.LeaderLeaseTimeout
@@ -109,7 +110,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
     l.raftLog,
     stableStore,
     snapshotStore,
-    transport
+    transport,
   )
   if err != nil {
     return err
@@ -125,7 +126,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
   if l.config.Raft.Bootstrap && !hasState {
     config := raft.Configuration{
       Servers: []raft.Server{{
-        ID: config.LocalID,
+        ID:      config.LocalID,
         Address: transport.LocalAddr(),
       }},
     }
@@ -308,8 +309,8 @@ func (l *logStore) StoreLogs(records []*raft.Log) error {
   for _, record := range records {
     if _, err := l.Append(&api.Record{
       Value: record.Data,
-      Term: record.Term,
-      Type: uint32(record.Type),
+      Term:  record.Term,
+      Type:  uint32(record.Type),
     }); err != nil {
       return err
     }
@@ -324,9 +325,9 @@ func (l *logStore) DeleteRange(min, max uint64) error {
 var _ raft.StreamLayer = (*StreamLayer)(nil)
 
 type StreamLayer struct {
-  ln net.Listener
+  ln              net.Listener
   serverTLSConfig *tls.Config
-  peerTLSConfig *tls.Config
+  peerTLSConfig   *tls.Config
 }
 
 func NewStreamLayer(
@@ -335,15 +336,15 @@ func NewStreamLayer(
   peerTLSConfig *tls.Config,
 ) *StreamLayer {
   return &StreamLayer{
-    ln: ln,
+    ln:              ln,
     serverTLSConfig: serverTLSConfig,
-    peerTLSConfig: peerTLSConfig,
+    peerTLSConfig:   peerTLSConfig,
   }
 }
 
 const RaftRPC = 1
 
-func (s *StreamLayer) Dial (
+func (s *StreamLayer) Dial(
   addr raft.ServerAddress,
   timeout time.Duration,
 ) (net.Conn, error) {
@@ -387,4 +388,32 @@ func (s *StreamLayer) Close() error {
 
 func (s *StreamLayer) Addr() net.Addr {
   return s.ln.Addr()
+}
+
+func (l *DistributedLog) Join(id, addr string) error {
+  configFuture := l.raft.GetConfiguration()
+  if err := configFuture.Error(); err != nil {
+    return err
+  }
+  serverID := raft.ServerID(id)
+  serverAddr := raft.ServerAddress(addr)
+  for _, srv := range configFuture.Configuration().Servers {
+    if srv.ID == serverID || srv.Address == serverAddr {
+      return nil
+    }
+    removeFuture := l.raft.RemoveServer(serverID, 0, 0)
+    if err := removeFuture.Error(); err != nil {
+      return err
+    }
+  }
+  addFuture := l.raft.AddVoter(serverID, serverAddr, 0, 0)
+  if err := addFuture.Error(); err != nil {
+    return err
+  }
+  return nil
+}
+
+func (l *DistributedLog) Leave(id string) error {
+  removeFuture := l.raft.RemoveServer(raft.ServerID(id), 0, 0)
+  return removeFuture.Error()
 }
