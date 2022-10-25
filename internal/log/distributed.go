@@ -6,9 +6,7 @@ import (
   "fmt"
   "github.com/hashicorp/raft"
   "github.com/hashicorp/raft-boltdb"
-  "github.com/hashicorp/serf/serf"
   api "github.com/oku3san/proglog/api/v1"
-  "go.uber.org/zap"
   "google.golang.org/protobuf/proto"
   "io"
   "net"
@@ -418,19 +416,6 @@ func (l *DistributedLog) Join(id, addr string) error {
 func (l *DistributedLog) Leave(id string) error {
   removeFuture := l.raft.RemoveServer(raft.ServerID(id), 0, 0)
   return removeFuture.Error()
-}
-
-func (m *Membership) logError(err error, msg string, member serf.Member) {
-  log := m.logger.Error
-  if err == raft.ErrNotLeader {
-    log = m.logger.Debug
-  }
-  log(
-    msg,
-    zap.Error(err),
-    zap.String("name", member.Name),
-    zap.String("rpc_addr", member.Tags["rpc_addr"]),
-  )
 }
 
 func (l *DistributedLog) WaitForLeader(timeout time.Duration) error {
