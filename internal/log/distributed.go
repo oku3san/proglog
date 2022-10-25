@@ -6,7 +6,9 @@ import (
   "fmt"
   "github.com/hashicorp/raft"
   "github.com/hashicorp/raft-boltdb"
+  "github.com/hashicorp/serf/serf"
   api "github.com/oku3san/proglog/api/v1"
+  "go.uber.org/zap"
   "google.golang.org/protobuf/proto"
   "io"
   "net"
@@ -89,6 +91,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
     timeout,
     os.Stderr,
   )
+
   config := raft.DefaultConfig()
   config.LocalID = l.config.Raft.LocalID
   if l.config.Raft.HeartbeatTimeout != 0 {
@@ -133,7 +136,6 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
     err = l.raft.BootstrapCluster(config).Error()
   }
   return err
-
 }
 
 func (l *DistributedLog) Append(record *api.Record) (uint64, error) {
@@ -416,4 +418,44 @@ func (l *DistributedLog) Join(id, addr string) error {
 func (l *DistributedLog) Leave(id string) error {
   removeFuture := l.raft.RemoveServer(raft.ServerID(id), 0, 0)
   return removeFuture.Error()
+}
+
+func (m *Membership) logError(err error, msg string, member serf.Member) {
+  log := m.logger.Error
+  if err == raft.ErrNotLeader {
+    log = m.logger.Debug
+  }
+  log(
+    msg,
+    zap.Error(err),
+    zap.String("name", member.Name),
+    zap.String("rpc_addr", member.Tags["rpc_addr"]),
+  )
+}
+
+func (l *DistributedLog) WaitForLeader(timeout time.Duration) error {
+  timeoutc := time.After(timeout)
+  ticker := time.NewTicker(time.Second)
+  defer ticker.Stop()
+  for {
+    select {
+    case <-timeoutc:
+      return fmt.Errorf("timed out")
+    case <-ticker.C:
+      if l := l.raft.Leader(); l != "" {
+        return nil
+      }
+    }
+  }
+}
+
+func (l *DistributedLog) Close() error {
+  f := l.raft.Shutdown()
+  if err := f.Error(); err != nil {
+    return err
+  }
+  if err := l.raftLog.Log.Close(); err != nil {
+    return err
+  }
+  return l.log.Close()
 }
