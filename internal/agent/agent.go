@@ -1,24 +1,31 @@
 package agent
 
 import (
+  "bytes"
   "crypto/tls"
   "fmt"
+  "github.com/hashicorp/raft"
   api "github.com/oku3san/proglog/api/v1"
   "github.com/oku3san/proglog/internal/auth"
   "github.com/oku3san/proglog/internal/discovery"
   "github.com/oku3san/proglog/internal/log"
   "github.com/oku3san/proglog/internal/server"
+  "github.com/soheilhy/cmux"
   "go.uber.org/zap"
   "google.golang.org/grpc"
   "google.golang.org/grpc/credentials"
+  "io"
   "net"
   "sync"
+  "time"
 )
 
 type Agent struct {
   Config
 
-  log        *log.Log
+  mux cmux.CMux
+
+  log        *log.DistributedLog
   server     *grpc.Server
   membership *discovery.Membership
   replicator *log.Replicator
@@ -38,6 +45,7 @@ type Config struct {
   StartJoinAddrs  []string
   ACLModeFile     string
   ACLPolicyFile   string
+  Bootstrap       bool
 }
 
 func (c Config) RPCAddr() (string, error) {
@@ -55,6 +63,7 @@ func New(config Config) (*Agent, error) {
   }
   setup := []func() error{
     a.setupLogger,
+    a.setupMux
     a.setupLog,
     a.setupServer,
     a.setupMembership,
@@ -67,6 +76,19 @@ func New(config Config) (*Agent, error) {
   return a, nil
 }
 
+func (a *Agent) setupMux() error {
+  rpcAddr := fmt.Sprintf(
+    ":%d",
+    a.Config.RPCPort,
+  )
+  ln, err := net.Listen("tcp", rpcAddr)
+  if err != nil {
+    return err
+  }
+  a.mux = cmux.New(ln)
+  return nil
+}
+
 func (a *Agent) setupLogger() error {
   logger, err := zap.NewDevelopment()
   if err != nil {
@@ -77,11 +99,32 @@ func (a *Agent) setupLogger() error {
 }
 
 func (a *Agent) setupLog() error {
-  var err error
-  a.log, err = log.NewLog(
-    a.Config.DataDir,
-    log.Config{},
+  raftLn := a.mux.Match(func(reader io.Reader) bool {
+    b := make([]byte, 1)
+    if _, err := reader.Read(b); err != nil {
+      return false
+    }
+    return bytes.Equal(b, []byte{byte(log.RaftRPC)})
+  })
+  logConfig := log.Config{}
+  logConfig.Raft.StreamLayer = log.NewStreamLayer(
+    raftLn,
+    a.Config.ServerTlSConfig,
+    a.Config.PeerTLSConfig,
   )
+  logConfig.Raft.LocalID = raft.ServerID(a.Config.NodeName)
+  logConfig.Raft.Bootstrap = a.Config.Bootstrap
+  var err error
+  a.log, err = log.NewDistributedLog(
+    a.Config.DataDir,
+    logConfig,
+  )
+  if err != nil {
+    return err
+  }
+  if a.Config.Bootstrap {
+    err = a.log.WaitForLeader(3 * time.Second)
+  }
   return err
 }
 
