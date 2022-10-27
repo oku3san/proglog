@@ -147,17 +147,10 @@ func (a *Agent) setupServer() error {
   if err != nil {
     return err
   }
-  rpcAddr, err := a.Config.RPCAddr()
-  if err != nil {
-    return err
-  }
-  ln, err := net.Listen("tcp", rpcAddr)
-  if err != nil {
-    return err
-  }
+  grpcLn := a.mux.Match(cmux.Any())
   go func() {
-    if err := a.server.Serve(ln); err != nil {
-      _ = a.Shutdown()
+    if err := a.server.Serve(grpcLn); err != nil {
+      _ = a.shutdown
     }
   }()
   return err
