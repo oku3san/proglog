@@ -80,6 +80,7 @@ func TestMultipleNodes(t *testing.T) {
           return false
         }
       }
+      return true
     }, 500*time.Millisecond, 50*time.Millisecond)
   }
 

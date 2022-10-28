@@ -5,7 +5,7 @@ import (
   "crypto/tls"
   "fmt"
   "github.com/hashicorp/raft"
-  "github.com/hashicorp/raft-boltdb"
+  raftboltdb "github.com/hashicorp/raft-boltdb"
   api "github.com/oku3san/proglog/api/v1"
   "google.golang.org/protobuf/proto"
   "io"
