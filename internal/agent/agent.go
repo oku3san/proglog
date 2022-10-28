@@ -5,7 +5,6 @@ import (
   "crypto/tls"
   "fmt"
   "github.com/hashicorp/raft"
-  api "github.com/oku3san/proglog/api/v1"
   "github.com/oku3san/proglog/internal/auth"
   "github.com/oku3san/proglog/internal/discovery"
   "github.com/oku3san/proglog/internal/log"
@@ -63,7 +62,7 @@ func New(config Config) (*Agent, error) {
   }
   setup := []func() error{
     a.setupLogger,
-    a.setupMux
+    a.setupMux,
     a.setupLog,
     a.setupServer,
     a.setupMembership,
@@ -73,6 +72,7 @@ func New(config Config) (*Agent, error) {
       return nil, err
     }
   }
+  go a.serve()
   return a, nil
 }
 
@@ -161,23 +161,7 @@ func (a *Agent) setupMembership() error {
   if err != nil {
     return err
   }
-  var opts []grpc.DialOption
-  if a.Config.PeerTLSConfig != nil {
-    opts = append(opts, grpc.WithTransportCredentials(
-      credentials.NewTLS(a.Config.PeerTLSConfig),
-    ),
-    )
-  }
-  conn, err := grpc.Dial(rpcAddr, opts...)
-  if err != nil {
-    return err
-  }
-  client := api.NewLogClient(conn)
-  a.replicator = &log.Replicator{
-    DialOptions: opts,
-    LocalServer: client,
-  }
-  a.membership, err = discovery.New(a.replicator, discovery.Config{
+  a.membership, err = discovery.New(a.log, discovery.Config{
     NodeName: a.Config.NodeName,
     BindAddr: a.Config.BindAddr,
     Tags: map[string]string{
@@ -210,6 +194,14 @@ func (a *Agent) Shutdown() error {
     if err := fn(); err != nil {
       return err
     }
+  }
+  return nil
+}
+
+func (a *Agent) serve() error {
+  if err := a.mux.Serve(); err != nil {
+    _ = a.Shutdown()
+    return err
   }
   return nil
 }
